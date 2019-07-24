@@ -1,7 +1,12 @@
+import java.lang.reflect.Method;
 import org.jlab.clas.physics.LorentzVector;
 import org.jlab.clas.physics.Vector3;
 import org.jlab.groot.data.H1F;
 import org.jlab.groot.data.H2F;
+import org.jlab.groot.math.F1D;
+import org.jlab.groot.math.Func1D;
+import org.jlab.groot.math.FunctionFactory;
+import org.jlab.groot.math.UserParameter;
 import org.jlab.groot.ui.TCanvas;
 import org.jlab.io.base.DataBank;
 import org.jlab.io.base.DataEvent;
@@ -24,9 +29,21 @@ import javax.swing.JPanel;
 import java.io.File;
 import java.io.FileWriter;
 import org.jlab.groot.ui.TGCanvas;
+import org.jlab.groot.data.TDirectory
+import org.jlab.jnp.hipo4.data.Bank
+import org.jlab.jnp.hipo4.data.Event
+import org.jlab.jnp.hipo4.data.SchemaFactory
+import org.jlab.jnp.hipo4.io.HipoReader
+import org.jlab.jnp.hipo4.io.HipoWriter
+TDirectory dir = new TDirectory();
 
-int num_elastic_events = 0; 
+
+double num_elastic_events = 0; 
 int countermax = 10000;
+boolean usecounter = true;
+//boolean usecounter = true;
+//boolean usepercentdisp = false;
+boolean usepercentdisp = true;
 int num_files_max = (int)Double.parseDouble(args[1]);
 double en = Double.parseDouble(args[0]);
 double enmax = en+0.5; //GeV
@@ -43,8 +60,8 @@ f.delete();
 FileWriter write = new FileWriter("output.txt",true);
 
 System.out.println("Energy is " + en + " Max number of files is " + num_files_max);
-HipoDataSource reader = new HipoDataSource();
-
+//HipoDataSource reader = new HipoDataSource();
+HipoReader reader = new HipoReader();
 H1F momentum = new H1F("momentum", "momentum", 500, 0, enmax);
 momentum.setTitleX("momentum");
 
@@ -101,7 +118,26 @@ momentum_el.setTitleX("momentum");
 H1F W_hist_el = new H1F("W_el", "W_el", 500, 0, 1.5);
 W_hist_el.setTitleX("W");
 
-H1F Q2_hist_el = new H1F("Q2_el", "Q2_el", 500, 0, enmax);
+float[] bins = new float[16];//{0.18f,0.21f,0.25f,0.31f,0.36f,0.43f,0.51f,0.62f,0.73f,0.88f,1.05f,1.25f,1.49f,1.78f,2.12f,2.54f};
+float bin_edge = 0.92;
+float bin_edge_prev = 0; 
+float bin_size = 0;
+int index = 0; 
+HashMap<Integer,Float> binmap = new HashMap<Integer,Float>();
+HashMap<Integer,Integer> binmapcount = new HashMap<Integer,Integer>();
+while(bin_edge < 15.64){
+	       bin_edge_prev = bin_edge;
+	       bins[index] = bin_edge;
+	       binmap.put(index,bin_edge);
+	       binmapcount.put(index,0);
+	       bin_edge*=Math.pow((double)10,(double)1/13)	   
+	       bin_size = bin_edge - bin_edge_prev;
+	       index++;
+}
+for(int key : binmap.keySet()){
+	System.out.println("debug " + binmap.get(key));
+}
+H1F Q2_hist_el = new H1F("Q2_el", 0.92, 15.63, bins);
 Q2_hist_el.setTitleX("Q2");
 
 H2F W_vs_Q2_el = new H2F("W_vs_Q2_el", "W_vs_Q2_el", 100, 0.0, enmax, 100, 0.0, 1.5);
@@ -157,7 +193,7 @@ H2F Cal_y_vs_x = new H2F("Cal_y_vs_x", "Cal_y_vs_x", 100, -450,450, 100, -450, 4
 Cal_y_vs_x.setTitleX("X (cm)");
 Cal_y_vs_x.setTitleY("Y (cm)");
 
-H2F DCXvsHTCCX = new H2F("DCXvsHTCCX", "DCXvsHTCCX", 100, -450,450,100,-50,50);
+/*H2F DCXvsHTCCX = new H2F("DCXvsHTCCX", "DCXvsHTCCX", 100, -450,450,100,-50,50);
 DCXvsHTCCX.setTitleX("DC X");
 DCXvsHTCCX.setTitleY("delta X");
 
@@ -169,7 +205,7 @@ DCYvsHTCCY.setTitleY("delta Y");
 H2F DCPhivsHTCCPhi = new H2F("DCPhivsHTCCPhi", "DCPhivsHTCCPhi", 100, -180,180,100,-10,10);
 DCPhivsHTCCPhi.setTitleX("DC Phi");
 DCPhivsHTCCPhi.setTitleY("delta Phi");
-
+*/
 H2F ZPvsZEP95 = new H2F("ZPvsZEP95","ZPvsZEP95",100, -10 , 10, 100, -10, 10);
 ZPvsZEP95.setTitleX("vertex Electron");
 ZPvsZEP95.setTitleY("vertex Proton");
@@ -266,25 +302,78 @@ H2F ECalcvsTheta_el = new H2F("ECalcvsTheta_el","ECalcvsTheta_el",100,0,40,100,0
 ECalcvsTheta_el.setTitleX("Theta Electron");
 ECalcvsTheta_el.setTitleY("Energy calculated using Theta proton and electron");
 
+H1F xb = new H1F("xb","xb",500,0,1);
+xb.setTitleX("x");
+H1F xbc = new H1F("xbc","xbc",500,0,1);
+xbc.setTitleX("xc");
+H2F xbcvsx = new H2F("xbcvsx","xbcvsx",100,0,1,100,0,1);
+xbcvsx.setTitleX("x");
+xbcvsx.setTitleY("y");
 
+H1F[] W_pbins = new H1F[6];
+H1F[] Q_pbins = new H1F[6];
+H1F[] Pprot_pbins = new H1F[6];
+H2F[] PprotvsThetaprot_pbins = new H2F[6];
+H1F[] Wcorr_pbins = new H1F[6];
+H1F[] Wcorr2_pbins = new H1F[6];
+for(int i = 0; i < 6; i++){
+	W_pbins[i] = new H1F("W_pbins_" + i,"W_pbins_" + i,500,0,wmax);
+	W_pbins[i].setTitleX("W");
+	Q_pbins[i] = new H1F("Q_pbins_" + i,"Q_pbins_" + i,500,0,enmax);
+	Q_pbins[i].setTitleX("Q2");
+	Pprot_pbins[i] = new H1F("Pprot_pbins_" + i,"Pprot_pbins_" + i,500,0,4);
+	Pprot_pbins[i].setTitleX("Proton Momentum");
+	PprotvsThetaprot_pbins[i] = new H2F("PprotvsThetaprot_pbins_" + i,"PprotvsThetaprot_pbins_" + i,100,89,181,100,0,4);
+	PprotvsThetaprot_pbins[i].setTitleX("Proton Theta");
+	PprotvsThetaprot_pbins[i].setTitleY("Proton Momentum");
+	Wcorr_pbins[i] = new H1F("Wcorr_pbins_" + i,"Wcorr_pbins_" + i,500,0,wmax);
+	Wcorr_pbins[i].setTitleX("W corrected (1.876)");
+	Wcorr2_pbins[i] = new H1F("Wcorr2_pbins_" + i,"Wcorr2_pbins_" + i,500,0,wmax);
+	Wcorr2_pbins[i].setTitleX("W corrected (1.86)");
+}
+
+
+
+double numevents = 0; 
 double e_mass = 0.000511;
 double p_mass = 0.93827203;
+double n_mass = 0.93957;
+double d_mass = 1.876;
 Vector3 zero = new Vector3(0.0, 0.0, 0.0);
 LorentzVector p_vec = new LorentzVector();
 p_vec.setVectM(zero, p_mass);
 LorentzVector e_vec = new LorentzVector(0.0, 0.0, en, en);
 int numfiles = args.length-2;
 int count_success = 0; 
-for(int i = 2; i < numfiles; i++){
-if(i > num_files_max + 1){break;}
+double counter = 0;
+double banks_counter = 0; 
+double ptheta_epcoin_nphe_count = 0;
+double phi_count = 0;
+double phi_eres_count = 0;
+double w_count = 0;
+for(int i = 2; i <= numfiles+1; i++){
+if(i > num_files_max + 1 && num_files_max != 0){break;}
 reader.open(args[i]);
-double numevents = (double)reader.getSize();
+counter = 0;
+banks_counter = 0; 
+ec_ptheta_epcoin_nphe_count = 0;
+phi_eres_count = 0;
+w_count = 0;
+        /*Method[] methods = reader.class.getDeclaredMethods();
+        int nMethod = 1;
+        System.out.println("1. List of all methods of Person class");
+        for (Method method : methods) {
+            System.out.printf("%d. %s", ++nMethod, method);
+            System.out.println();
+        }*/
+numevents = (double)reader.getEventCount();
+//numevents = 23;
 int filenum = i-1;
 double emax = 0;
 phimax = 0;
 thetamax = 0;
 vzmax = 0;
-double counter = 0;
+
 byte sector = 0;
 int cal_row = 0;
 int dc_row = 0;
@@ -357,7 +446,17 @@ double pos_htcc = 0;
 double path_length = 0; 
 double dt = 0; 
 double time_ctof = 0; 
-while (reader.hasEvent()) {
+double elec_e = 0;
+double elec_eprime = 0; 
+Vector3 q_vec_3 = new Vector3();
+Bank bank_rec = new Bank(reader.getSchemaFactory().getSchema("REC::Particle"));
+Bank bank_cal = new Bank(reader.getSchemaFactory().getSchema("REC::Calorimeter"));
+Bank bank_traj = new Bank(reader.getSchemaFactory().getSchema("REC::Traj"));
+Bank bank_htcc = new Bank(reader.getSchemaFactory().getSchema("REC::Cherenkov"));
+Event event = new Event();
+
+
+while (reader.hasNext()) {
         ec_flag = false;
 	dc_flag = false; 
 	pid_flag = false;
@@ -368,20 +467,32 @@ while (reader.hasEvent()) {
 	found_electron = false;
 	found_proton = false;
 	dcphihtccphi_flag = false;
-	DataEvent event = reader.getNextEvent();
+	//DataEvent event = reader.getNextEvent();
+	reader.nextEvent(event);
+	event.read(bank_rec);
+	event.read(bank_cal);
+	event.read(bank_traj);
+	event.read(bank_htcc);
 	counter++;
 
-	System.out.print("file " + filenum + "/" + numfiles + " "  + counter*100/numevents + "% complete.\r");
-	if (event.hasBank("REC::Particle") && event.hasBank("REC::Cherenkov") && event.hasBank("REC::Calorimeter") && event.hasBank("REC::Traj")) {
-		DataBank bank_rec = event.getBank("REC::Particle");
-		DataBank bank_cal = event.getBank("REC::Calorimeter");
-		DataBank bank_traj = event.getBank("REC::Traj");
-		DataBank bank_htcc = event.getBank("REC::Cherenkov");
+	if(usepercentdisp) System.out.print("file " + filenum + "/" + numfiles + " "  + counter*100/numevents + "% complete.\r");
+	if(true){//if (event.hasBank("REC::Particle") && event.hasBank("REC::Cherenkov") && event.hasBank("REC::Calorimeter") && event.hasBank("REC::Traj")) {
+	   	banks_counter++;
+		//DataBank bank_rec = event.getBank("REC::Particle");
+		
+		//DataBank bank_cal = event.getBank("REC::Calorimeter");
+		//DataBank bank_traj = event.getBank("REC::Traj");
+		//DataBank bank_htcc = event.getBank("REC::Cherenkov");
+		
+		Map<Integer,List<Integer>> calMap = loadMapByIndex(bank_cal,"pindex");
+		Map<Integer,List<Integer>> trajMap = loadMapByIndex(bank_traj,"pindex");
+	        Map<Integer,List<Integer>> htccMap = loadMapByIndex(bank_htcc,"pindex");
 
+		
 			
 			//counter++;
-			//if(counter > countermax){break;}
-		for (int k = 0; k < bank_rec.rows(); k++) {
+			if(counter > countermax && usecounter){break;}
+		for (int k = 0; k < bank_rec.getRows(); k++) {
 			int pid = bank_rec.getInt("pid", k);
 			byte q = bank_rec.getByte("charge", k);
 			float px = bank_rec.getFloat("px", k);
@@ -395,7 +506,7 @@ while (reader.hasEvent()) {
 			phi *= 180/Math.PI;
 			float vz = bank_rec.getFloat("vz", k);	     
 
-			if(pid == 11 && !found_electron){
+			if(pid == 11 && k == 0 && !found_electron){
 				
 				e_px = px; 
 				e_py = py; 
@@ -415,41 +526,65 @@ while (reader.hasEvent()) {
 					  q_vec = new LorentzVector(); //4 vector q
 					  q_vec.copy(e_vec); //e - e'
 					  q_vec.sub(e_vec_prime);
+					  q_vec_3 = q_vec.vect();
 					  Q2 = -q_vec.mass2(); //-q^2
-				
+					  elec_e = en; 
+					  elec_eprime = e_vec_prime.e();
 					  LorentzVector w_vec = new LorentzVector(); //4 vector used to calculate W
 					  w_vec.copy(p_vec); //p-q
 					  w_vec.add(q_vec);
 					  W = w_vec.mass(); 					 
-					  htccrow = get_htcc_row(event,k);	
-					  nphe = bank_htcc.getFloat("nphe",htccrow);
-					  htcc_theta = bank_htcc.getFloat("theta",htccrow);		   
-				          cal_energy_map = cal_cut_row(event,k);		
+					  //htccrow = get_htcc_row(event,k);	
+					  for(int ihtcc : htccMap.get(k)){
+					  	  nphe = bank_htcc.getFloat("nphe",ihtcc);
+					  	  //htcc_theta = bank_htcc.getFloat("theta",ihtcc);		   
+					  }
+					  //System.out.println(nphe + " " + bank_htcc.getFloat("nphe",htccrow));
+					  //nphe = bank_htcc.getFloat("nphe",htccrow);
+					  //htcc_theta = bank_htcc.getFloat("theta",htccrow);		   
+				          //cal_energy_map = cal_cut_row(event,k);		
 
-						if(!ec_flag && cal_energy_map.size() == 3){
+						if(!ec_flag){// && cal_energy_map.size() == 3){
 								
 							pcal_energy = 0;
 							ecin_energy = 0;
 							ecout_energy = 0;
 							tot_cal_energy = 0;
-								
-							sector = bank_cal.getByte("sector",cal_row);
-							x_cal = bank_cal.getFloat("x",cal_row);
-							y_cal = bank_cal.getFloat("y",cal_row);
+							for(int ical : calMap.get(k)){
+								sector = bank_cal.getByte("sector",ical);
+							      	x_cal = bank_cal.getFloat("x",ical);
+							      	y_cal = bank_cal.getFloat("y",ical);
+								lu = bank_cal.getFloat("lu",ical);
+								lv = bank_cal.getFloat("lv",ical);
+							   	lw = bank_cal.getFloat("lw",ical);
+							   	switch(bank_cal.getInt("layer",ical)){
+									case 1:
+										pcal_energy = bank_cal.getFloat("energy",ical);
+										break;
+									case 4:
+										ecin_energy = bank_cal.getFloat("energy",ical);
+										break;
+									case 7:
+										ecout_energy = bank_cal.getFloat("energy",ical);
+										break;
+									default: break;
+								}
+							}	
+							
 								
 							Cal_y_vs_x_precut.fill(x_cal,y_cal);
-							lu = cal_energy_map.get(1).get(1);
+							/*lu = cal_energy_map.get(1).get(1);
 							lv = cal_energy_map.get(1).get(2);
 							lw = cal_energy_map.get(1).get(3);
 							pcal_energy = cal_energy_map.get(1).get(0);
 							ecin_energy = cal_energy_map.get(4).get(0);
 							ecout_energy = cal_energy_map.get(7).get(0);
- 
+ 							*/
 							//System.out.println(ecin_energy + " " + ecout_energy + "      ");
 							Cal_lu.fill(lu);
 							Cal_lv.fill(lv);
 							Cal_lw.fill(lw);				       
-							if(ecin_energy > 0.06){// && lu > 60 && lu < 350 && lv < 370 && lw < 360){
+							if(pcal_energy != 0 && ecin_energy != 0 && ecout_energy != 0 && ecin_energy > 0.06){// && lu > 60 && lu < 350 && lv < 370 && lw < 360){
 								ec_flag = true;
 								tot_cal_energy = pcal_energy + ecin_energy + ecout_energy;
 							}	
@@ -457,9 +592,10 @@ while (reader.hasEvent()) {
 		
 				} 
 			}
-				
-			dc_row = dc_cut_row(event, k);
-			if(dc_row != -1 && !dc_flag){
+			/*	
+			//dc_row = dc_cut_row(event, k);
+			if(!dc_flag){
+				//for(int ical : calMap.get(k)){
 				x_dc = bank_traj.getFloat("x",dc_row);
 				y_dc = bank_traj.getFloat("y",dc_row);
 				z_dc = bank_traj.getFloat("z",dc_row);
@@ -471,8 +607,8 @@ while (reader.hasEvent()) {
 				dc_flag = true;
 			}
 			
-			htcc_row = htcc_cut_row(event,k);
-			if(htcc_row != -1 && !htcc_flag){
+			//htcc_row = htcc_cut_row(event,k);
+			if(!htcc_flag){
 				x_htcc = bank_traj.getFloat("x",htcc_row);
 				y_htcc = bank_traj.getFloat("y",htcc_row);
 				z_htcc = bank_traj.getFloat("z",htcc_row);
@@ -483,7 +619,7 @@ while (reader.hasEvent()) {
 				phi_htcc *= 180/Math.PI;
 				htcc_flag = true; 
 			}
-
+			*/
 			if(pid == 2212 && !found_proton){
 			       	found_proton = true;
 				p_px = px; 
@@ -526,11 +662,21 @@ while (reader.hasEvent()) {
 				   E_vs_Theta.fill(e_theta,e_vec_prime.e());
 				   z_vs_Theta.fill(e_theta,e_vz);
 				   Phi_vs_Theta.fill(e_theta,e_phi);
+				   
+				   Vector3 n_vec_3 = new Vector3(0,0,0);
+				   n_vec_3.copy(p_vec_3);
+				   n_vec_3.negative();
+				   q_vec_3 = q_vec.vect();
 				   if(W > 1.5){
 			     	   	p_hw_mom.fill(p_mom);
 			     		p_hw_theta.fill(p_theta);
 			     		p_hw_phi.fill(p_phi);
-			     		if(p_theta > 95){
+					xb.fill(Q2/(2*p_mass*(elec_e-elec_eprime)));
+			     		xbc.fill(Q2/(2*((d_mass - p_vec_prime.e())*(elec_e-elec_eprime)-q_vec_3.dot(n_vec_3))));
+					xbcvsx.fill(Q2/(2*p_mass*(elec_e-elec_eprime)),Q2/((2*(d_mass - p_vec_prime.e())*(elec_e-elec_eprime)-q_vec_3.dot(n_vec_3))));
+					
+					
+					if(p_theta > 95){
 			     			   p_hw_momP95.fill(p_mom);
 						   p_hw_thetaP95.fill(p_theta);
 						   p_hw_phiP95.fill(p_phi);	
@@ -545,10 +691,10 @@ while (reader.hasEvent()) {
 		
 //		System.out.println(Boolean.toString(ec_flag) + " " + Boolean.toString(found_electron) + " " + Boolean.toString(found_proton) + " " + Math.abs(e_phi-p_phi) + " " + nphe);		
 		
-		if(ec_flag && p_theta > 40 && found_electron && found_proton && nphe > 2){
-			
+		if(/*ec_flag &&*/p_theta > 40 && found_electron && found_proton && nphe > 2){
+			ptheta_epcoin_nphe_count++;
 			double eres = e_vec_prime.e()+p_vec_prime.e()-p_mass-en;
-			//if(htccrow != -1){
+			
 			nphevsp.fill(e_mom,nphe);
 			nphevstheta.fill(e_theta,nphe);
 			//Cal_lu.fill(lu);
@@ -560,11 +706,11 @@ while (reader.hasEvent()) {
 			ECInvsOut.fill(ecout_energy,ecin_energy);
 			ECvsPC.fill(pcal_energy,ecin_energy+ecout_energy);
 
-			if(dc_flag && htcc_flag){ 
+			/*if(dc_flag && htcc_flag){ 
 				   DCXvsHTCCX.fill(x_dc,x_dc-x_htcc);
 				   DCYvsHTCCY.fill(y_dc,y_dc-y_htcc);
 				   DCPhivsHTCCPhi.fill(phi_dc,phi_dc-phi_htcc);
-			}
+			}*/
 			
 						
 			if(p_theta > 95){
@@ -574,22 +720,31 @@ while (reader.hasEvent()) {
 			     ZPvsZEP95.fill(e_vz,p_vz);
 			}
 			if(Math.abs(e_phi-p_phi) < 185 && Math.abs(e_phi-p_phi) > 175){
+				phi_count++;
 				EResPE_el.fill(-eres);
 			}
+			PhiResPE_el.fill(Math.abs(e_phi - p_phi));
 			if(Math.abs(e_phi-p_phi) < 185 && Math.abs(e_phi-p_phi) > 175 && Math.abs(eres) <= 0.5){
+				phi_eres_count++;
 				EnPvsEnE_el.fill(e_vec_prime.e(),p_vec_prime.e());
 				
 				momentum_el.fill(e_mom);
 				W_hist_el.fill(W);
 				W_vs_Q2_el.fill(Q2,W);
 				Phi_vs_W_el.fill(W,e_phi);
-				Q2_hist_el.fill(Q2);
+				
 				E_vs_Theta_el.fill(e_theta,e_vec_prime.e());
 				ProtonPvsTheta_el.fill(p_theta,p_mom);
-				if(W<=1){
+				if(true){//if(W<=1){
+					w_count++;
+					Q2_hist_el.fill(Q2);
+					//System.out.println("elastic cut!");
+					for(int key : binmap.keySet()){
+						  if(Q2 < binmap.get(key)){binmapcount.put(key-1,binmapcount.get(key-1)+1); break;}
+					}
 					num_elastic_events++;
 					PhiPvsPhiE_el.fill(e_phi,p_phi);
-					PhiResPE_el.fill(Math.abs(e_phi - p_phi));
+					
 					ZPvsZE_el.fill(e_vz,p_vz);
 					VResPE_el.fill(e_vz-p_vz);
 					z_vs_Theta_el.fill(e_theta,e_vz);
@@ -598,6 +753,65 @@ while (reader.hasEvent()) {
 					ECalc_el.fill(p_mass*(1/Math.tan(p_theta*Math.PI/180)/Math.tan(e_theta*Math.PI/360) - 1));
 				}
 			} 
+		}
+		
+		if(nphe > 2 && p_theta > 90 && p_vec_3.dot(q_vec_3) < 0 && found_proton && found_electron){
+			 double pq = p_vec_3.dot(q_vec_3)/(p_vec_3.mag()*q_vec_3.mag());
+			 LorentzVector qpmanip = new LorentzVector();
+			 qpmanip.copy(q_vec);
+			 qpmanip.sub(p_vec_prime); 
+			 double Wcorr = Math.sqrt((d_mass - p_vec_prime.e() + (elec_e-elec_eprime))*(d_mass - p_vec_prime.e() + (elec_e-elec_eprime))-(qpmanip.vect()).dot(qpmanip.vect()));
+			 double Wcorr2 = Math.sqrt((1.86 - p_vec_prime.e() + (elec_e-elec_eprime))*(d_mass - p_vec_prime.e() + (elec_e-elec_eprime))-(qpmanip.vect()).dot(qpmanip.vect()));
+			 
+			 if(pq < 0){
+			       if(pq > -0.3){
+			       	     if(p_mom > 0 && p_mom < 0.15){
+				     	      W_pbins[0].fill(W);
+					      Q_pbins[0].fill(Q2);
+					      Pprot_pbins[0].fill(p_mom);
+					      PprotvsThetaprot_pbins[0].fill(p_theta,p_mom);
+					      Wcorr_pbins[0].fill(Wcorr);
+					      Wcorr2_pbins[0].fill(Wcorr2);
+				     }else if(p_mom > 0.15 && p_mom < 0.25){
+				     	      W_pbins[1].fill(W);
+					      Q_pbins[1].fill(Q2);
+					      Pprot_pbins[1].fill(p_mom);
+					      PprotvsThetaprot_pbins[1].fill(p_theta,p_mom);
+					      Wcorr_pbins[1].fill(Wcorr);
+					      Wcorr2_pbins[1].fill(Wcorr2);
+				     }else if(p_mom > 0.25 && p_mom < 0.5){
+				     	      W_pbins[2].fill(W);
+					      Q_pbins[2].fill(Q2);
+					      Pprot_pbins[2].fill(p_mom);
+					      PprotvsThetaprot_pbins[2].fill(p_theta,p_mom);
+					      Wcorr_pbins[2].fill(Wcorr);
+					      Wcorr2_pbins[2].fill(Wcorr2);
+				     }
+			       }else if(pq < -0.3){
+			       	     if(p_mom > 0 && p_mom < 0.15){
+				     	      W_pbins[3].fill(W);
+					      Q_pbins[3].fill(Q2);
+					      Pprot_pbins[3].fill(p_mom);
+					      PprotvsThetaprot_pbins[3].fill(p_theta,p_mom);
+					      Wcorr_pbins[3].fill(Wcorr);
+					      Wcorr2_pbins[3].fill(Wcorr2);
+				     }else if(p_mom > 0.15 && p_mom < 0.25){
+				     	      W_pbins[4].fill(W);
+					      Q_pbins[4].fill(Q2);
+					      Pprot_pbins[4].fill(p_mom);
+					      PprotvsThetaprot_pbins[4].fill(p_theta,p_mom);
+					      Wcorr_pbins[4].fill(Wcorr);
+					      Wcorr2_pbins[4].fill(Wcorr2);
+				     }else if(p_mom > 0.25 && p_mom < 0.5){
+				     	      W_pbins[5].fill(W);
+					      Q_pbins[5].fill(Q2);
+					      Pprot_pbins[5].fill(p_mom);
+					      PprotvsThetaprot_pbins[5].fill(p_theta,p_mom);
+					      Wcorr_pbins[5].fill(Wcorr);
+					      Wcorr2_pbins[5].fill(Wcorr2);
+				     } 	     
+			       }
+			 }
 		}
 		found_electron = false; 
 		found_proton = false;
@@ -613,7 +827,7 @@ boolean dc_cut(float X, float Y, int S)
 	return result;
 }
 
-int get_htcc_row(DataEvent event, int row){
+/*int get_htcc_row(DataEvent event, int row){
        DataBank bank_htcc = event.getBank("REC::Cherenkov");
        int row_index = 0;
        for(int j = 0; j < bank_htcc.rows(); j++){
@@ -623,7 +837,7 @@ int get_htcc_row(DataEvent event, int row){
 	       }
        }
        return -1;
-}
+}*/
 
 ConcurrentHashMap<Integer,List<Float>> cal_cut_row(DataEvent event, int row){
 	DataBank bank_cal = event.getBank("REC::Calorimeter");
@@ -681,7 +895,19 @@ int htcc_cut_row(DataEvent event, int row){
 	}
 	return htcc_row_match;
 }
-
+Map<Integer,List<Integer>> loadMapByIndex( 
+       Bank fromBank,
+       String idxVarName) {
+       Map<Integer,List<Integer>> map=new HashMap<Integer,List<Integer>>();
+       if (fromBank!=null) {
+           for (int iFrom=0; iFrom<fromBank.getRows(); iFrom++) {
+               final int iTo = fromBank.getInt(idxVarName,iFrom);
+               if (!map.containsKey(iTo)) map.put(iTo,new ArrayList<Integer>()); 
+               map.get(iTo).add(iFrom);
+       }
+    }
+    return map;
+}
 
 //System.out.println(emax + " " + thetamax + " " + phimax + " " + vzmax);
 
@@ -698,203 +924,122 @@ scanner.nextLine();
 System.out.println("OK");
 */
 
-TGCanvas c1 = new TGCanvas("c_ep_coincidence","c_ep_coincidence",800,800);
-c1.addCanvas("ProtonPvsTheta");
-c1.draw(ProtonPvsTheta);
-
-c1.addCanvas("ProtonPvsThetaPQ");
-c1.draw(ProtonPvsThetaPQ);
-
-c1.addCanvas("ProtonP");
-c1.draw(ProtonP);
-
-c1.addCanvas("ThetaPvsThetaE");
-c1.draw(ThetaPvsThetaE);
-
-c1.addCanvas("ECalc");
-c1.draw(ECalc);
-
-
-TGCanvas c2 = new TGCanvas("c_ep_coincidence_ptheta90","c_ep_coincidence_ptheta90",800,800);
-c2.addCanvas("ProtonP90");
-c2.draw(ProtonP90);
-
-c2.addCanvas("EnPvsEnE");
-c2.draw(EnPvsEnE);
-
-c2.addCanvas("ZPvsZE");
-c2.draw(ZPvsZE);
-
-c2.addCanvas("EResPE");
-c2.draw(EResPE);
-
-c2.addCanvas("VResPE");
-c2.draw(VResPE);
-
-c2.addCanvas("momentum");
-c2.draw(momentum);
-
-c2.addCanvas("W_vs_Q2");
-c2.draw(W_vs_Q2);
-
-c2.addCanvas("Q2_hist");
-c2.draw(Q2_hist);
-
-c2.addCanvas("W_hist");
-c2.draw(W_hist);
-
-c2.addCanvas("E_vs_Theta");
-c2.draw(E_vs_Theta);
-
-c2.addCanvas("z_vs_Theta");
-c2.draw(z_vs_Theta);
-
-c2.addCanvas("Phi_vs_Theta");
-c2.draw(Phi_vs_Theta);
-
-c2.addCanvas("Phi_vs_W");
-c2.draw(Phi_vs_W);
-
-TGCanvas c3 = new TGCanvas("c_ep_coincidence_ptheta90_W1.5","c_ep_coincidence_ptheta90_W1.5",800,800);
-c3.addCanvas("p_hw_mom");
-c3.draw(p_hw_mom);
-
-c3.addCanvas("p_hw_theta");
-c3.draw(p_hw_theta);
-
-c3.addCanvas("p_hw_phi");
-c3.draw(p_hw_phi);
-
-TGCanvas c4 = new TGCanvas("c_ep_coincidence_ptheta95_W1.5","c_ep_coincidence_ptheta95_W1.5",800,800);
-c4.addCanvas("p_hw_momP95");
-c4.draw(p_hw_momP95);
-
-c4.addCanvas("p_hw_thetaP95");
-c4.draw(p_hw_thetaP95);
-
-c4.addCanvas("p_hw_phiP95");
-c4.draw(p_hw_phiP95);
-
-TGCanvas c5 = new TGCanvas("c_ec_epcoincidence","c_ec_epcoincidence",800,800);
-c5.addCanvas("PhiPvsPhiE");
-c5.draw(PhiPvsPhiE);
-
-c5.addCanvas("PhiResPE");
-c5.draw(PhiResPE);
-
-TGCanvas c6 = new TGCanvas("c_ec_epcoincidence_ptheta40","c_ec_epcoincidence_ptheta40",800,800);
-c6.addCanvas("nphevsp");
-c6.draw(nphevsp);
-
-c6.addCanvas("nphevstheta");
-c6.draw(nphevstheta);
-
-c6.addCanvas("Cal_energy_p_vs_p");
-c6.draw(Cal_energy_p_vs_p);
-
-c6.addCanvas("ECInvsOut");
-c6.draw(ECInvsOut);
-
-c6.addCanvas("ECvsPC");
-c6.draw(ECvsPC);
-
-c6.addCanvas("Cal_y_vs_x_precut");
-c6.draw(Cal_y_vs_x_precut);
-
-c6.addCanvas("Cal_y_vs_x");
-c6.draw(Cal_y_vs_x);
-
-c6.addCanvas("Cal_lu");
-c6.draw(Cal_lu);
-
-c6.addCanvas("Cal_lv");
-c6.draw(Cal_lv);
-
-c6.addCanvas("Cal_lw");
-c6.draw(Cal_lw);
-
-TGCanvas c7 = new TGCanvas("c_ec_epcoincidence_ptheta95","c_ec_epcoincidence_ptheta95",800,800);
-c7.addCanvas("EResPEP95");
-c7.draw(EResPEP95);
-
-c7.addCanvas("VResPEP95");
-c7.draw(VResPEP95);
-
-c7.addCanvas("ZPvsZEP95");
-c7.draw(ZPvsZEP95);
-
-c7.addCanvas("PhiResPEP95");
-c7.draw(PhiResPEP95);
-
-
-
-TGCanvas canall = new TGCanvas("canall","canall", 800,800);
-
-
-canall.addCanvas("DCXvsHTCCX");
-canall.draw(DCXvsHTCCX);
-
-canall.addCanvas("DCYvsHTCCY");
-canall.draw(DCYvsHTCCY);
-
-canall.addCanvas("DCPhivsHTCCPhi");
-canall.draw(DCPhivsHTCCPhi);
-
-
-
-
-TGCanvas c8 = new TGCanvas("c_ec_epcoincidence_ptheta40_phiresd5_eres<0.5","c_ec_epcoincidence_ptheta40_phiresd5_eres<0.5", 800,800);
-c8.addCanvas("W_vs_Q2_el");
-c8.draw(W_vs_Q2_el);
-
-c8.addCanvas("momentum_el");
-c8.draw(momentum_el);
-
-c8.addCanvas("Q2_hist_el");
-c8.draw(Q2_hist_el);
-
-c8.addCanvas("W_hist_el");
-c8.draw(W_hist_el);
-
-c8.addCanvas("E_vs_Theta_el");
-c8.draw(E_vs_Theta_el);
-
-c8.addCanvas("Phi_vs_W_el");
-c8.draw(Phi_vs_W_el);
-
-c8.addCanvas("EnPvsEnE_el");
-c8.draw(EnPvsEnE_el);
-
-c8.addCanvas("PhiResPE_el");
-c8.draw(PhiResPE_el);
-
-c8.addCanvas("EResPE_el");
-c8.draw(EResPE_el);
-
-
-
-TGCanvas c9 = new TGCanvas("c_ec_epcoincidence_ptheta40_phiresd5_eres<0.5_W<1","c_ec_epcoincidence_ptheta40_phiresd5_eres<0.5_W<1", 800,800);
-
-c9.addCanvas("PhiPvsPhiE_el");
-c9.draw(PhiPvsPhiE_el);
-
-c9.addCanvas("ZPvsZE_el");
-c9.draw(ZPvsZE_el);
-
-c9.addCanvas("VResPE_el");
-c9.draw(VResPE_el);
-
-c9.addCanvas("z_vs_Theta_el");
-c9.draw(z_vs_Theta_el);
-
-c9.addCanvas("Phi_vs_Theta_el");
-c9.draw(Phi_vs_Theta_el);
-
-c9.addCanvas("ThetaPvsThetaE_el");
-c9.draw(ThetaPvsThetaE_el);
-
-c9.addCanvas("ECalc_el");
-c9.draw(ECalc_el);
-
-
+dir.mkdir("/ep_coincidence");
+dir.cd("/ep_coincidence");
+dir.addDataSet(ProtonPvsTheta);
+dir.addDataSet(ProtonPvsThetaPQ);
+dir.addDataSet(ProtonP);
+dir.addDataSet(ThetaPvsThetaE);
+dir.addDataSet(ECalc);
+
+dir.cd();
+dir.mkdir("/ep_coincidence_ptheta90");
+dir.cd("/ep_coincidence_ptheta90");
+dir.addDataSet(ProtonP90);
+dir.addDataSet(EnPvsEnE);
+dir.addDataSet(ZPvsZE);
+dir.addDataSet(EResPE);
+dir.addDataSet(VResPE);
+dir.addDataSet(momentum);
+dir.addDataSet(W_vs_Q2);
+dir.addDataSet(Q2_hist);
+dir.addDataSet(W_hist);
+dir.addDataSet(E_vs_Theta);
+dir.addDataSet(z_vs_Theta);
+dir.addDataSet(Phi_vs_Theta);
+dir.addDataSet(Phi_vs_W);
+
+dir.cd();
+dir.mkdir("/ep_coincidence_ptheta90_W1.5");
+dir.cd("/ep_coincidence_ptheta90_W1.5");
+dir.addDataSet(p_hw_mom);
+dir.addDataSet(p_hw_theta);
+dir.addDataSet(p_hw_phi);
+dir.addDataSet(xb);
+dir.addDataSet(xbc);
+dir.addDataSet(xbcvsx);
+TGCanvas c = new TGCanvas("c","c",800,800);
+c.draw(xbcvsx);
+F1D func = new F1D("func","x",0,1);
+c.draw(func,"same");
+dir.cd();
+dir.mkdir("/ep_coincidence_ptheta95_W1.5");
+dir.cd("/ep_coincidence_ptheta95_W1.5");
+dir.addDataSet(p_hw_momP95);
+dir.addDataSet(p_hw_thetaP95);
+dir.addDataSet(p_hw_phiP95);
+
+dir.cd();
+dir.mkdir("/ec_epcoincidence");
+dir.cd("/ec_epcoincidence");
+dir.addDataSet(PhiPvsPhiE);
+dir.addDataSet(PhiResPE);
+
+dir.cd();
+dir.mkdir("/ec_epcoincidence_ptheta40");
+dir.cd("/ec_epcoincidence_ptheta40");
+dir.addDataSet(nphevsp);
+dir.addDataSet(nphevstheta);
+dir.addDataSet(Cal_energy_p_vs_p);
+dir.addDataSet(ECInvsOut);
+dir.addDataSet(ECvsPC);
+dir.addDataSet(Cal_y_vs_x_precut);
+dir.addDataSet(Cal_y_vs_x);
+dir.addDataSet(Cal_lu);
+dir.addDataSet(Cal_lv);
+dir.addDataSet(Cal_lw);
+
+dir.cd();
+dir.mkdir("/ec_epcoincidence_ptheta95");
+dir.cd("/ec_epcoincidence_ptheta95");
+dir.addDataSet(EResPEP95);
+dir.addDataSet(VResPEP95);
+dir.addDataSet(ZPvsZEP95);
+dir.addDataSet(PhiResPEP95);
+
+dir.cd();
+dir.mkdir("/ec_epcoincidence_ptheta40_phiresd5_eres<0.5");
+dir.cd("/ec_epcoincidence_ptheta40_phiresd5_eres<0.5");
+dir.addDataSet(W_vs_Q2_el);
+dir.addDataSet(momentum_el);
+dir.addDataSet(Q2_hist_el);
+dir.addDataSet(W_hist_el);
+dir.addDataSet(E_vs_Theta_el);
+dir.addDataSet(Phi_vs_W_el);
+dir.addDataSet(EnPvsEnE_el);
+dir.addDataSet(PhiResPE_el);
+dir.addDataSet(EResPE_el);
+
+dir.cd();
+dir.mkdir("/ec_epcoincidence_ptheta40_phiresd5_eres<0.5_W<1");
+dir.cd("/ec_epcoincidence_ptheta40_phiresd5_eres<0.5_W<1");
+dir.addDataSet(PhiPvsPhiE_el);
+dir.addDataSet(ZPvsZE_el);
+dir.addDataSet(VResPE_el);
+dir.addDataSet(z_vs_Theta_el);
+dir.addDataSet(Phi_vs_Theta_el);
+dir.addDataSet(ThetaPvsThetaE_el);
+dir.addDataSet(ECalc_el);
+
+dir.cd();
+dir.mkdir("/ProtonBins");
+dir.cd("/ProtonBins");
+for(int i = 0; i < 6; i++){
+	dir.addDataSet(W_pbins[i]);
+	dir.addDataSet(Q_pbins[i]);
+	dir.addDataSet(Pprot_pbins[i]);
+   	dir.addDataSet(PprotvsThetaprot_pbins[i]);
+        dir.addDataSet(Wcorr_pbins[i]);
+        dir.addDataSet(Wcorr2_pbins[i]);
+}
+
+dir.writeFile("testdir.hipo");
+System.out.println(num_elastic_events + "/" + numevents + " Elastic events");
+for(int key : binmap.keySet()){
+	  float p1 = binmap.get(key);
+	  float p2 = (binmap.containsKey(key+1))?binmap.get(key+1):binmap.get(key)*Math.pow(10,1/13)
+	  int p3 = binmapcount.get(key);
+	  System.out.println(key + " " + p1 + "-" + p2 + " " + p3);
+}
+System.out.println(counter + " " + banks_counter + " " + ptheta_epcoin_nphe_count + " " + phi_count + " " + phi_eres_count + " " + w_count);
 System.out.println("Done!");
